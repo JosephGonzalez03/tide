@@ -73,7 +73,6 @@ function create_new_session() {
         tmux new -s $project_name -c $project_dir/$project_name -d
 
         if [[ ! -z $config_script ]];then
-            tmux new -s $project_name -c $project_dir/$project_name -d
             $HOME/.config/tide/configs/$config_script $project_dir $project_name
         fi
     fi

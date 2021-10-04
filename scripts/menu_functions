@@ -1,0 +1,74 @@
+#!/bin/bash
+
+function print_menu_header () {
+    echo "~~~ $@ ~~~"
+}
+
+function print_menu_body() {
+    local menu_list=("$@")
+
+    for key in ${!menu_list[@]}; do
+        echo "  $(( key+1 )): ${menu_list[$key]}"
+    done
+} 
+
+function get_closed_projects() {
+    local projects=($( ls -1 $settings_project_directory ))
+    local sessions=($( tmux list-sessions -F "#{session_name}" 2> /dev/null ))
+    declare -a closed_projects
+
+    for project in ${projects[@]}; do
+        if [[ ! "${sessions[@]}" =~ "$project" ]]; then
+            closed_projects+=($project)
+        fi
+    done
+
+    echo ${closed_projects[@]}
+}
+
+function get_active_sesions_table() {
+    declare -a sessions
+    local sessions=($( tmux ls -F "#{session_name}|#{session_windows} windows|(created #{t:session_created})," 2> /dev/null ))
+
+    if [[ -z $sessions ]]; then
+        echo "  No active sessions."
+    else
+        local sessions_string="${sessions[@]}"
+
+        local IFS=','
+        read -a sessions_array <<< "${sessions_string//, /,}"
+
+        for session in ${sessions_array[@]}; do
+            IFS='|'
+            read -a session_info <<< "$session"
+            printf "  %s%s%s\n" "$session"
+        done | column -t -s "|"
+    fi
+}
+
+# input => key: number, array: array<string>; output => "true" / "false"
+function isKeyValid() {
+    local args=("$@")
+    local key=${args[0]}
+    local array_length=${#args[@]}
+    local array=("${args[@]:1:array_length}")
+
+    if [[ ! "$key" =~ ^[0-9]+$ ]]; then
+        echo "false"
+    elif (( ($key <  1) || ($key > ${#array[@]}) )); then
+        echo "false"
+    else
+        echo "true"
+    fi
+}
+
+function print_invalid_key_error() {
+    local key="$1"
+
+    if [[ ! "$key" =~ ^[0-9]+$ ]];then
+        echo "$key is invalid!"
+    else
+        echo "$key is invalid!"
+    fi
+    read
+}

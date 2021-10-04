@@ -1,0 +1,80 @@
+#!/bin/bash
+source $HOME/.config/tide/scripts/menu_functions
+source $HOME/.config/tide/scripts/parse_yaml
+eval $(parse_yaml $HOME/.config/tide/settings.yaml "settings_")
+
+function start_sessions_option() {
+    local closed_projects=($( get_closed_projects ))
+    print_menu_header Projects
+    print_menu_body ${closed_projects[@]}
+    echo "  c: cancel"
+
+    read -p ">> " closed_project_keys_string
+    IFS=',' read -ra closed_project_keys <<< "$closed_project_keys_string"
+
+    # Only open closed projects if none of the closed project keys are c
+    if [[ ! "${closed_project_keys[*]}" =~ "c" ]]; then
+        for (( closedProjectKeyIndex = 0; closedProjectKeyIndex < "${#closed_project_keys[@]}"; closedProjectKeyIndex++ )); do
+            local closed_project_key=${closed_project_keys[$closedProjectKeyIndex]}
+
+            # Load config selection prompt only if closed_project key is valid
+            if [[ $(isKeyValid $closed_project_key ${closed_projects[@]}) == "true" ]]; then
+                local closed_project_name=${closed_projects[$closed_project_key-1]}
+                local configs=($( ls -1 $HOME/.config/tide/configs ))
+
+                while true; do
+                    print_menu_header Select $closed_project_name config
+                    print_menu_body ${configs[@]}
+                    echo "  n: none"
+
+                    read -p "> " config_key
+
+                    case $config_key in
+                        "n")
+                            create_new_session $closed_project_name
+
+                            # Detatch from every session except the last one
+                            if [[ closedProjectKeyIndex -eq  $(( ${#closed_project_keys[@]}-1 )) ]]; then
+                                tmux attach -t $closed_project_name
+                            fi
+                            break
+                            ;;
+                        *)
+                            # Load tmux session only if config key is valid
+                            if [[ $(isKeyValid $config_key ${configs[@]}) == "true" ]]; then
+                                local config_name=${configs[$config_key-1]}
+
+                                create_new_session $closed_project_name $config_name
+
+                                # Detatch from every session except the last one
+                                if [[ closedProjectKeyIndex -eq  $(( ${#closed_project_keys[@]}-1 )) ]]; then
+                                    tmux attach -t $closed_project_name
+                                fi
+                                break
+                            else
+                                print_invalid_key_error $config_key
+                            fi
+                            ;;
+                    esac
+                done
+            else
+                print_invalid_key_error $closed_project_key
+            fi
+        done
+    fi
+}
+
+function create_new_session() {
+    local project_dir=$settings_project_directory
+    local project_name="$1"
+    local config_script="$2"
+
+    if ! tmux has-session -t $project_name 2> /dev/null; then
+        tmux new -s $project_name -c $project_dir/$project_name -d
+
+        if [[ ! -z $config_script ]];then
+            tmux new -s $project_name -c $project_dir/$project_name -d
+            $HOME/.config/tide/configs/$config_script $project_dir $project_name
+        fi
+    fi
+}

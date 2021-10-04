@@ -1,0 +1,46 @@
+#!/bin/bash
+for script in $HOME/.config/tide/scripts/*; do source $script; done
+
+function main_menu_options() {
+    echo "  s: start sessions"
+    echo "  r: reattach to ssessions"
+    echo "  k: kill sessions"
+    echo "  q: quit"
+}
+
+function main_menu() {
+    local sessions=($( tmux list-sessions 2> /dev/null ))
+
+    clear
+    print_menu_header Tide
+    get_active_sesions_table
+    echo
+    main_menu_options
+
+    read -p "> " option
+
+    case $option in
+        "s")
+            start_sessions_option
+            clear
+            ;;
+        "r")
+            reattach_option
+            clear
+            ;;
+        "k")
+            kill_sessions_option
+            clear
+            ;;
+        "q")
+            exit 0
+            ;;
+        *)
+            echo "Invalid option!"
+            ;;
+    esac
+}
+
+while true; do
+    main_menu
+done

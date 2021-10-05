@@ -1,4 +1,4 @@
-# tide
+# Tide
 
 ## Introduction
 Tide is a terminal menu app that wraps around your tmux installation. It allows you to create tmux sessions from 

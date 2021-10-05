@@ -1,6 +1,6 @@
 #!/bin/bash
 
-starting_dir=${2}/${2}
+starting_dir=${1}/${2}
 project_name=${2}
 
 tmux rename-window editor

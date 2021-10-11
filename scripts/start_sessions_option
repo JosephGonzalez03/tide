@@ -20,48 +20,60 @@ function start_sessions_option() {
             # Load config selection prompt only if closed_project key is valid
             if [[ $(isKeyValid $closed_project_key ${closed_projects[@]}) == "true" ]]; then
                 local closed_project_name=${closed_projects[$closed_project_key-1]}
-                local configs=($( ls -1 $HOME/.config/tide/configs ))
+                local is_last_closed_project="false"
 
-                while true; do
-                    print_menu_header Select $closed_project_name config
-                    print_menu_body ${configs[@]}
-                    echo "  n: none"
+                if [[ $closedProjectKeyIndex -eq  $(( ${#closed_project_keys[@]}-1 )) ]]; then
+                   is_last_closed_project="true"
+                fi
 
-                    read -p "> " config_key
-
-                    case $config_key in
-                        "n")
-                            create_new_session $closed_project_name
-
-                            # Detatch from every session except the last one
-                            if [[ closedProjectKeyIndex -eq  $(( ${#closed_project_keys[@]}-1 )) ]]; then
-                                tmux attach -t $closed_project_name
-                            fi
-                            break
-                            ;;
-                        *)
-                            # Load tmux session only if config key is valid
-                            if [[ $(isKeyValid $config_key ${configs[@]}) == "true" ]]; then
-                                local config_name=${configs[$config_key-1]}
-
-                                create_new_session $closed_project_name $config_name
-
-                                # Detatch from every session except the last one
-                                if [[ closedProjectKeyIndex -eq  $(( ${#closed_project_keys[@]}-1 )) ]]; then
-                                    tmux attach -t $closed_project_name
-                                fi
-                                break
-                            else
-                                print_invalid_key_error $config_key
-                            fi
-                            ;;
-                    esac
-                done
+                select_config_sub_menu $closed_project_name $is_last_closed_project
             else
                 print_invalid_key_error $closed_project_key
             fi
         done
     fi
+}
+
+function select_config_sub_menu() {
+    local closed_project_name="$1"
+    local attach_to_session="$2"
+    local configs=($( ls -1 $HOME/.config/tide/configs ))
+
+    while true; do
+        print_menu_header Select $closed_project_name config
+        print_menu_body ${configs[@]}
+        echo "  n: none"
+
+        read -p "> " config_key
+
+        case $config_key in
+            "n")
+                create_new_session $closed_project_name
+
+                # Detatch from every session except the last one
+                if [[ $attach_to_session == "true" ]]; then
+                    tmux attach -t $closed_project_name
+                fi
+                break
+                ;;
+            *)
+                # Load tmux session only if config key is valid
+                if [[ $(isKeyValid $config_key ${configs[@]}) == "true" ]]; then
+                    local config_name=${configs[$config_key-1]}
+
+                    create_new_session $closed_project_name $config_name
+
+                    # Detatch from every session except the last one
+                    if [[ $attach_to_session == "true" ]]; then
+                        tmux attach -t $closed_project_name
+                    fi
+                    break
+                else
+                    print_invalid_key_error $config_key
+                fi
+                ;;
+        esac
+    done
 }
 
 function create_new_session() {

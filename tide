@@ -1,6 +1,6 @@
 #!/bin/bash
-for script in $HOME/.config/tide/scripts/*; do source $script; done
 
+### menu functions
 function main_menu_options() {
     echo "  s: start sessions"
     echo "  r: reattach to ssessions"
@@ -8,6 +8,224 @@ function main_menu_options() {
     echo "  q: quit"
 }
 
+function print_menu_header () {
+    echo "~~~ $@ ~~~"
+}
+
+function print_menu_body() {
+    local menu_list=("$@")
+
+    for key in ${!menu_list[@]}; do
+        echo "  $(( key+1 )): ${menu_list[$key]}"
+    done
+} 
+
+parse_yaml() {
+    local prefix=$2
+    local s='[[:space:]]*' w='[a-zA-Z0-9_]*' fs=$(echo @|tr @ '\034')
+    sed -ne "s|^\($s\)\($w\)$s:$s\"\(.*\)\"$s\$|\1$fs\2$fs\3|p" \
+        -e "s|^\($s\)\($w\)$s:$s\(.*\)$s\$|\1$fs\2$fs\3|p"  $1 |
+            awk -F$fs '{
+                indent = length($1)/2;
+                vname[indent] = $2;
+                for (i in vname) {if (i > indent) {delete vname[i]}}
+                if (length($3) > 0) {
+                    vn=""; for (i=0; i<indent; i++) {vn=(vn)(vname[i])("_")}
+                    printf("%s%s%s=\"%s\"\n", "'$prefix'",vn, $2, $3);
+                }
+            }'
+}
+eval $(parse_yaml $HOME/.config/tide/settings.yaml "settings_")
+
+function get_closed_projects() {
+    local projects=($( ls -1 $settings_project_directory ))
+    local sessions=($( tmux list-sessions -F "#{session_name}" 2> /dev/null ))
+    declare -a closed_projects
+
+    for project in ${projects[@]}; do
+        if [[ ! "${sessions[@]}" =~ "$project" ]]; then
+            closed_projects+=($project)
+        fi
+    done
+
+    echo ${closed_projects[@]}
+}
+
+function get_active_sesions_table() {
+    declare -a sessions
+    local sessions=($( tmux ls -F "#{session_name}|#{session_windows} windows|(created #{t:session_created})," 2> /dev/null ))
+
+    if [[ -z $sessions ]]; then
+        echo "  No active sessions."
+    else
+        local sessions_string="${sessions[@]}"
+
+        local IFS=','
+        read -a sessions_array <<< "${sessions_string//, /,}"
+
+        for session in ${sessions_array[@]}; do
+            IFS='|'
+            read -a session_info <<< "$session"
+            printf "  %s%s%s\n" "$session"
+        done | column -t -s "|"
+    fi
+}
+
+# input => key: number, array: array<string>; output => "true" / "false"
+function isKeyValid() {
+    local args=("$@")
+    local key=${args[0]}
+    local array_length=${#args[@]}
+    local array=("${args[@]:1:array_length}")
+
+    if [[ ! "$key" =~ ^[0-9]+$ ]]; then
+        echo "false"
+    elif (( ($key <  1) || ($key > ${#array[@]}) )); then
+        echo "false"
+    else
+        echo "true"
+    fi
+}
+
+function print_invalid_key_error() {
+    local key="$1"
+
+    if [[ ! "$key" =~ ^[0-9]+$ ]];then
+        echo "$key is invalid!"
+    else
+        echo "$key is invalid!"
+    fi
+    read
+}
+### menu functions end
+
+### start sesssions
+function start_sessions_option() {
+    local closed_projects=($( get_closed_projects ))
+    print_menu_header Projects
+    print_menu_body ${closed_projects[@]}
+    echo "  c: cancel"
+
+    read -p ">> " closed_project_keys_string
+    IFS=',' read -ra closed_project_keys <<< "$closed_project_keys_string"
+
+    # Only open closed projects if none of the closed project keys are c
+    if [[ ! "${closed_project_keys[*]}" =~ "c" ]]; then
+        for (( closedProjectKeyIndex = 0; closedProjectKeyIndex < "${#closed_project_keys[@]}"; closedProjectKeyIndex++ )); do
+            local closed_project_key=${closed_project_keys[$closedProjectKeyIndex]}
+
+            # Load config selection prompt only if closed_project key is valid
+            if [[ $(isKeyValid $closed_project_key ${closed_projects[@]}) == "true" ]]; then
+                local closed_project_name=${closed_projects[$closed_project_key-1]}
+                local is_last_closed_project="false"
+
+                if [[ $closedProjectKeyIndex -eq  $(( ${#closed_project_keys[@]}-1 )) ]]; then
+                   is_last_closed_project="true"
+                fi
+
+                select_config_sub_menu $closed_project_name $is_last_closed_project
+            else
+                print_invalid_key_error $closed_project_key
+            fi
+        done
+    fi
+}
+
+function select_config_sub_menu() {
+    local closed_project_name="$1"
+    local attach_to_session="$2"
+    local configs=($( ls -1 $HOME/.config/tide/configs ))
+
+    while true; do
+        print_menu_header Select $closed_project_name config
+        print_menu_body ${configs[@]}
+        echo "  n: none"
+
+        read -p "> " config_key
+
+        case $config_key in
+            "n")
+                create_new_session $closed_project_name
+
+                # Detatch from every session except the last one
+                if [[ $attach_to_session == "true" ]]; then
+                    tmux attach -t $closed_project_name
+                fi
+                break
+                ;;
+            *)
+                # Load tmux session only if config key is valid
+                if [[ $(isKeyValid $config_key ${configs[@]}) == "true" ]]; then
+                    local config_name=${configs[$config_key-1]}
+
+                    create_new_session $closed_project_name $config_name
+
+                    # Detatch from every session except the last one
+                    if [[ $attach_to_session == "true" ]]; then
+                        tmux attach -t $closed_project_name
+                    fi
+                    break
+                else
+                    print_invalid_key_error $config_key
+                fi
+                ;;
+        esac
+    done
+}
+
+function create_new_session() {
+    local project_dir=$settings_project_directory
+    local project_name="$1"
+    local config_script="$2"
+
+    if ! tmux has-session -t $project_name 2> /dev/null; then
+        tmux new -s $project_name -c $project_dir/$project_name -d
+
+        if [[ ! -z $config_script ]];then
+            $HOME/.config/tide/configs/$config_script $project_dir $project_name
+        fi
+    fi
+}
+### start sesssions end
+
+### reattach
+function reattach_option() {
+    local sessions=($( tmux list-sessions -F "#{session_name}" 2> /dev/null ))
+
+    if [[ ! -z $sessions ]]; then
+        tmux attach -t ${sessions[0]}
+    fi
+}
+### reattach end
+
+### kill sessions
+function kill_sessions_option() {
+    local sessions=($( tmux list-sessions -F "#{session_name}" 2> /dev/null ))
+
+    if [[ ! -z $sessions ]]; then
+        print_menu_header Sessions
+        print_menu_body ${sessions[@]}
+        echo "  c: cancel"
+
+        read -p ">> " session_keys_string
+        IFS=',' read -ra sessions_keys <<< "$session_keys_string"
+
+        # Only delete sessions if none of the session keys are c
+        if [[ ! "${sessions_keys[*]}" =~ "c" ]]; then
+            for session_key in ${sessions_keys[@]}; do
+                # Delete tmux sessions only if session keys are valid
+                if [[ $(isKeyValid $session_key ${sessions[@]}) == "true" ]]; then
+                    tmux kill-session -t ${sessions[$session_key-1]}
+                else
+                    print_invalid_key_error $session_key
+                fi
+            done
+        fi
+    fi
+}
+### kill sessions end
+
+### main menu
 function main_menu() {
     local sessions=($( tmux list-sessions 2> /dev/null ))
 
@@ -44,3 +262,4 @@ function main_menu() {
 while true; do
     main_menu
 done
+### main menu end

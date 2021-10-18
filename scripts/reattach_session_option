@@ -1,9 +1,0 @@
-#!/bin/bash
-
-function reattach_option() {
-    local sessions=($( tmux list-sessions -F "#{session_name}" 2> /dev/null ))
-
-    if [[ ! -z $sessions ]]; then
-        tmux attach -t ${sessions[0]}
-    fi
-}

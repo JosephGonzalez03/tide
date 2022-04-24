@@ -3,7 +3,7 @@
 ### menu functions
 function main_menu_options() {
     echo "  s: start sessions"
-    echo "  r: reattach to ssessions"
+    echo "  r: reattach to sessions"
     echo "  k: kill sessions"
     echo "  q: quit"
 }
